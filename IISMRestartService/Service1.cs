@@ -13,6 +13,9 @@ namespace IISMRestartService
     {
         bool running;
         string appPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+
+        string ResetType = ConfigurationManager.AppSettings["ResetType"];
+
         Thread IISMRestThread;
 
         //Dictonary of days of the week
@@ -54,6 +57,7 @@ namespace IISMRestartService
                 //get the date and time from the Config file
                 string weekday = ConfigurationManager.AppSettings["DayOfReset"];
                 string time = ConfigurationManager.AppSettings["TimeOfReset"];
+                string date = ConfigurationManager.AppSettings["DateOfReset"];
 
                 //Get the day of the week from the Dictonary using the Config file
                 DayOfWeek dayOfWeek = days[weekday.ToLower()];
@@ -64,11 +68,11 @@ namespace IISMRestartService
                 // Get the current date
                 DateTime currentDateTime = DateTime.Now;
 
-                // Calculate the target date and time
-                DateTime targetDateTime = currentDateTime.Date.AddDays((int)dayOfWeek - (int)currentDateTime.DayOfWeek).Add(timeOfDay);
+                // Calculate the target date and time and day 
+                DateTime targetDateTime;
 
                 // Restart IIS Once at the start and then every Day at the time specified in the Config file
-                if (targetDateTime > currentDateTime) targetDateTime = targetDateTime.AddDays(-7);
+                targetDateTime = currentDateTime.AddDays(-1);
 
                 while (running)
                 {
@@ -98,21 +102,43 @@ namespace IISMRestartService
                             Logger.WriteErrorLog(ex.Message);
 
                         }
-                        finally
+                        if (iisReset.ExitCode != 0)
                         {
-                            if (iisReset.ExitCode != 0)
-                            {
-                                Logger.WriteErrorLog("IIS Restart Failed at " + DateTime.Now);
-                            }
+                            Logger.WriteErrorLog("IIS Restart Failed at " + DateTime.Now);
                         }
-                        targetDateTime = targetDateTime.AddDays(7);
+                        else
+                        {
+                            Logger.WriteDebugLog("IIS Restarted at " + DateTime.Now);
+                            Logger.WriteDebugLog("IIS will restarted at " + targetDateTime);
+                        }
+                        if (ResetType.Equals("daily", StringComparison.OrdinalIgnoreCase))
+                        {
+                            targetDateTime = currentDateTime.Date.Add(timeOfDay).AddDays(1);
+                        }
+                        else if (ResetType.Equals("weekly", StringComparison.OrdinalIgnoreCase))
+                        {
+                            targetDateTime = currentDateTime.Date.AddDays((int)dayOfWeek - (int)currentDateTime.DayOfWeek).Add(timeOfDay).AddDays(7);
+                        }
+                        else if (ResetType.Equals("monthly", StringComparison.OrdinalIgnoreCase))
+                        {
+                            //Date of the month specified in the Config file
+                            int dayOfMonth = Convert.ToInt32(date);
+                            targetDateTime = currentDateTime.Date.AddDays(dayOfMonth - currentDateTime.Day).Add(timeOfDay).AddDays(30);
 
-                        Logger.WriteDebugLog("IIS Restarted at " + DateTime.Now);
-                        Logger.WriteDebugLog("IIS will restarted at " + targetDateTime);
-
+                        }
+                        else
+                        {
+                            targetDateTime = currentDateTime.Date.Add(timeOfDay).AddDays(-1);
+                            Logger.WriteErrorLog("Invalid ResetType in Config file. ResetType should be daily, weekly or monthly");
+                        }
+#if !DEBUG
                         Thread.Sleep(300 * 1000);
+#endif
+
                     }
+#if !DEBUG
                     Thread.Sleep(30 * 1000);
+#endif
                 }
             }
             catch (Exception ex)
